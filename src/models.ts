@@ -3,7 +3,9 @@ import mongoose from "mongoose";
 interface IUser {
   _id: mongoose.Types.ObjectId;
   telegramId: number;
-  username: string;
+  username?: string;
+  firstName: string;
+  lastName?: string;
   channels: mongoose.Types.ObjectId[];
 }
 
@@ -16,6 +18,8 @@ interface IChannel {
 const userSchema = new mongoose.Schema({
   telegramId: { type: Number, unique: true, required: true },
   username: { type: String, unique: true, required: false },
+  firstName: { type: String, unique: false, required: false },
+  lastName: { type: String, unique: false, required: false },
   channels: [{ type: mongoose.Schema.Types.ObjectId, ref: "Channel" }],
 });
 

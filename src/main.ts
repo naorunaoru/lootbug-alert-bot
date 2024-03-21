@@ -43,20 +43,21 @@ bot.onText(/\/register/, async (msg) => {
   const chatId = msg.chat.id.toString();
   const userId = msg.from?.id;
   const name = msg.from?.username;
+  const { first_name: firstName, last_name: lastName } = msg.from || {};
 
   if (!userId) return;
 
   let user = await User.findOne({ telegramId: userId });
 
   if (!user) {
-    user = new User({ telegramId: userId, username: name, channels: [] });
-    await user.save();
-  } else {
-    if (name && user.username !== name) {
-      user.username = name;
-      await user.save();
-    }
+    user = new User({ telegramId: userId, channels: [] });
   }
+
+  user.username = name || user.username;
+  user.firstName = firstName || user.firstName;
+  user.lastName = lastName || user.lastName;
+
+  await user.save();
 
   let channel = await Channel.findOne({ channelId: chatId });
   if (!channel) {
@@ -126,8 +127,16 @@ bot.onText(/\/alert( .+)?/, async (msg, match) => {
   }
 
   const userMentions = channel.users
-    .map((user) => `@${user.username}`)
+    .map((user) => {
+      if (user.username) {
+        return `@${user.username}`;
+      }
+
+      return `<a href="tg://user?id=${user.telegramId}">${user.firstName}</a>`;
+    })
     .join(" ");
 
-  bot.sendMessage(chatId, `${userMentions} ${message.trim()}`);
+  bot.sendMessage(chatId, `${userMentions} ${message.trim()}`, {
+    parse_mode: "HTML",
+  });
 });
