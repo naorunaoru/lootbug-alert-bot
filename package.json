@@ -1,10 +1,11 @@
 {
-  "name": "telegram-mention-bot",
-  "version": "1.0.0",
+  "name": "lootbug-alert-bot",
+  "version": "0.0.1",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc",
+    "start": "npm run build && node dist/main.js"
   },
   "keywords": [],
   "author": "",

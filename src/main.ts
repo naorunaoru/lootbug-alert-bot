@@ -100,13 +100,16 @@ bot.onText(/\/unregister/, async (msg) => {
     );
     await channel.save();
 
-    bot.sendMessage(chatId, `${user?.username}, you are now of DELET.`);
+    bot.sendMessage(
+      chatId,
+      `${user?.username}, you are now of DELET from premises.`
+    );
   } else {
-    bot.sendMessage(chatId, `${user?.username}, you haven't registered yet.`);
+    bot.sendMessage(chatId, `${user?.username}, you're not on a list.`);
   }
 });
 
-bot.onText(/\/call( .+)?/, async (msg, match) => {
+bot.onText(/\/alert( .+)?/, async (msg, match) => {
   const chatId = msg.chat.id.toString();
   const message = match?.[1] || "";
 

@@ -1,0 +1,32 @@
+version: "3.8"
+
+services:
+  mongo:
+    image: mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - lootbug-network
+
+  lootbug-alert-bot:
+    build: .
+    ports:
+      - "8081:8081"
+      - "8082:8082"
+    env_file:
+      - .env
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/lootbugdb
+    depends_on:
+      - mongo
+    networks:
+      - lootbug-network
+
+networks:
+  lootbug-network:
+    driver: bridge
+
+volumes:
+  mongo-data:
