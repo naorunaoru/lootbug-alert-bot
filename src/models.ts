@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-interface IUser {
+export interface IUser {
   _id: mongoose.Types.ObjectId;
   telegramId: number;
   username?: string;
@@ -9,7 +9,7 @@ interface IUser {
   channels: mongoose.Types.ObjectId[];
 }
 
-interface IChannel {
+export interface IChannel {
   _id: mongoose.Types.ObjectId;
   channelId: string;
   users: IUser[];

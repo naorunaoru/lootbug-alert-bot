@@ -2,6 +2,10 @@ import TelegramBot from "node-telegram-bot-api";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import { Channel, User } from "./models";
+import {
+  getFormattedUsername,
+  getFormattedUsernameFromMessage,
+} from "./helpers";
 
 dotenv.config();
 
@@ -28,7 +32,7 @@ if (!mongoUri) {
   console.error(
     "MongoDB connection URI is not provided. Please set MONGODB_URI in your environment variables."
   );
-  process.exit(1); // Exit the process if the URI is not available
+  process.exit(1);
 }
 
 mongoose
@@ -36,7 +40,7 @@ mongoose
   .then(() => console.log("Successfully connected to MongoDB."))
   .catch((error) => {
     console.error("Error connecting to MongoDB:", error);
-    process.exit(1); // Exit the process if there's an error connecting to MongoDB
+    process.exit(1);
   });
 
 bot.onText(/\/register/, async (msg) => {
@@ -79,7 +83,13 @@ bot.onText(/\/register/, async (msg) => {
     await user.save();
   }
 
-  bot.sendMessage(chatId, `${name}, you're on a list now.`);
+  bot.sendMessage(
+    chatId,
+    `${getFormattedUsername(user)}, you're on a list now.`,
+    {
+      parse_mode: "HTML",
+    }
+  );
 });
 
 bot.onText(/\/unregister/, async (msg) => {
@@ -103,10 +113,19 @@ bot.onText(/\/unregister/, async (msg) => {
 
     bot.sendMessage(
       chatId,
-      `${user?.username}, you are now of DELET from premises.`
+      `${user?.username}, you are now of DELET from premises.`,
+      {
+        parse_mode: "HTML",
+      }
     );
   } else {
-    bot.sendMessage(chatId, `${user?.username}, you're not on a list.`);
+    bot.sendMessage(
+      chatId,
+      `${getFormattedUsernameFromMessage(msg)}, you're not on a list.`,
+      {
+        parse_mode: "HTML",
+      }
+    );
   }
 });
 
@@ -126,15 +145,7 @@ bot.onText(/\/alert( .+)?/, async (msg, match) => {
     return;
   }
 
-  const userMentions = channel.users
-    .map((user) => {
-      if (user.username) {
-        return `@${user.username}`;
-      }
-
-      return `<a href="tg://user?id=${user.telegramId}">${user.firstName}</a>`;
-    })
-    .join(" ");
+  const userMentions = channel.users.map(getFormattedUsername).join(" ");
 
   bot.sendMessage(chatId, `${userMentions} ${message.trim()}`, {
     parse_mode: "HTML",
