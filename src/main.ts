@@ -113,7 +113,9 @@ bot.onText(/\/unregister/, async (msg) => {
 
     bot.sendMessage(
       chatId,
-      `${user?.username}, you are now of DELET from premises.`,
+      `${getFormattedUsernameFromMessage(
+        msg
+      )}, you are now of DELET from premises.`,
       {
         parse_mode: "HTML",
       }
