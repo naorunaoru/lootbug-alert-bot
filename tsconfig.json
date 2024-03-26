@@ -2,7 +2,8 @@
   "compilerOptions": {
     "outDir": "./dist",
     "target": "ESNext",
-    "module": "CommonJS",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

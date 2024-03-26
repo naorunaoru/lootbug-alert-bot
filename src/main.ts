@@ -1,11 +1,18 @@
 import TelegramBot from "node-telegram-bot-api";
 import mongoose from "mongoose";
+import i18next from "i18next";
 import dotenv from "dotenv";
-import { Channel, User } from "./models";
+import { Channel } from "./models";
 import {
   getFormattedUsername,
   getFormattedUsernameFromMessage,
 } from "./helpers";
+import {
+  addUserToChannel,
+  findOrCreateChannel,
+  findOrCreateUser,
+  removeUserFromChannel,
+} from "./db";
 
 dotenv.config();
 
@@ -14,19 +21,22 @@ const mongoUri = process.env.MONGODB_URI;
 
 const MAX_USERS_PER_MESSAGE = 5;
 
+const i18nResources = {
+  en: {
+    translation: {
+      onList: "{{username}}, you're on a list now.",
+      notOnList: "{{username}}, you're not on a list.",
+      offList: "{{username}}, you are now of DELET from premises.",
+      noRegisteredUsers:
+        "There are no registered users in this channel. Use /register to get on the list.",
+    },
+  },
+};
+
 if (!token) {
   console.error(
     "Telegram bot token is not provided. Please set TELEGRAM_BOT_TOKEN in your environment variables."
   );
-  process.exit(1);
-}
-
-let bot: TelegramBot;
-
-try {
-  bot = new TelegramBot(token, { polling: true });
-} catch (error) {
-  console.error("Failed to create TelegramBot instance:", error);
   process.exit(1);
 }
 
@@ -37,15 +47,45 @@ if (!mongoUri) {
   process.exit(1);
 }
 
-mongoose
-  .connect(mongoUri)
-  .then(() => console.log("Successfully connected to MongoDB."))
-  .catch((error) => {
+(async () => {
+  try {
+    await mongoose.connect(mongoUri);
+  } catch (error) {
     console.error("Error connecting to MongoDB:", error);
     process.exit(1);
-  });
+  }
 
-bot.getMe().then((botInfo) => {
+  console.log("Successfully connected to MongoDB.");
+
+  let bot: TelegramBot;
+
+  try {
+    bot = new TelegramBot(token, { polling: true });
+  } catch (error) {
+    console.error("Failed to create TelegramBot instance:", error);
+    process.exit(1);
+  }
+
+  try {
+    await i18next.init({
+      lng: "en",
+      resources: i18nResources,
+      fallbackLng: "en",
+    });
+    console.log("i18next is initialized.");
+  } catch (error) {
+    console.error("Failed to initialize i18next:", error);
+  }
+
+  let botInfo;
+
+  try {
+    botInfo = await bot.getMe();
+  } catch (error) {
+    console.error("bot.getMe() encountered an error:", error);
+    process.exit(1);
+  }
+
   let botUsername = "";
 
   if (botInfo.username) {
@@ -54,47 +94,16 @@ bot.getMe().then((botInfo) => {
 
   bot.onText(/\/register/, async (msg) => {
     const chatId = msg.chat.id.toString();
-    const userId = msg.from?.id;
-    const name = msg.from?.username;
-    const { first_name: firstName, last_name: lastName } = msg.from || {};
+    if (!msg.from) return;
 
-    if (!userId) return;
+    const user = await findOrCreateUser(msg.from);
+    const channel = await findOrCreateChannel(msg.chat);
 
-    let user = await User.findOne({ telegramId: userId });
-
-    if (!user) {
-      user = new User({ telegramId: userId, channels: [] });
-    }
-
-    user.username = name || user.username;
-    user.firstName = firstName || user.firstName;
-    user.lastName = lastName || user.lastName;
-
-    await user.save();
-
-    let channel = await Channel.findOne({ channelId: chatId });
-    if (!channel) {
-      channel = new Channel({ channelId: chatId, users: [] });
-      await channel.save();
-    }
-
-    const isUserInChannel = channel.users.some((u) => u._id.equals(user?._id));
-
-    if (!isUserInChannel) {
-      channel.users.push(user);
-      await channel.save();
-    }
-
-    const isChannelInUser = user.channels.some((c) => c.equals(channel?._id));
-
-    if (!isChannelInUser) {
-      user.channels.push(channel._id);
-      await user.save();
-    }
+    await addUserToChannel(user, channel);
 
     bot.sendMessage(
       chatId,
-      `${getFormattedUsername(user)}, you're on a list now.`,
+      i18next.t("onList", { username: getFormattedUsername(user) }),
       {
         parse_mode: "HTML",
       }
@@ -103,28 +112,21 @@ bot.getMe().then((botInfo) => {
 
   bot.onText(/\/unregister/, async (msg) => {
     const chatId = msg.chat.id.toString();
-    const userId = msg.from?.id;
-    if (!userId) return;
+    if (!msg.from) return;
 
-    const user = await User.findOne({ telegramId: userId });
-    const channel = await Channel.findOne({ channelId: chatId });
+    const user = await findOrCreateUser(msg.from);
+    const channel = await findOrCreateChannel(msg.chat);
 
-    if (user && channel) {
-      user.channels = user.channels.filter(
-        (ch) => ch.toString() !== channel._id.toString()
-      );
-      await user.save();
+    const isUserInChannel = channel.users.some((u) => u._id.equals(user?._id));
 
-      channel.users = channel.users.filter(
-        (usr) => usr.toString() !== user._id.toString()
-      );
-      await channel.save();
+    if (isUserInChannel) {
+      await removeUserFromChannel(user, channel);
 
       bot.sendMessage(
         chatId,
-        `${getFormattedUsernameFromMessage(
-          msg
-        )}, you are now of DELET from premises.`,
+        i18next.t("offList", {
+          username: getFormattedUsernameFromMessage(msg),
+        }),
         {
           parse_mode: "HTML",
         }
@@ -132,7 +134,9 @@ bot.getMe().then((botInfo) => {
     } else {
       bot.sendMessage(
         chatId,
-        `${getFormattedUsernameFromMessage(msg)}, you're not on a list.`,
+        i18next.t("notOnList", {
+          username: getFormattedUsernameFromMessage(msg),
+        }),
         {
           parse_mode: "HTML",
         }
@@ -151,10 +155,7 @@ bot.getMe().then((botInfo) => {
       );
 
       if (!channel || channel.users.length === 0) {
-        bot.sendMessage(
-          chatId,
-          "There are no registered users in this channel. Use /register to get on the list."
-        );
+        bot.sendMessage(chatId, i18next.t("noRegisteredUsers"));
         return;
       }
 
@@ -179,4 +180,6 @@ bot.getMe().then((botInfo) => {
       }
     }
   );
-});
+
+  console.log("Bot commands registered.");
+})();

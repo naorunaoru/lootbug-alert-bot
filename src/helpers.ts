@@ -1,7 +1,7 @@
 import { Message } from "node-telegram-bot-api";
-import { IUser } from "./models";
+import { AppUser } from "./models";
 
-export const getFormattedUsername = (user: IUser) => {
+export const getFormattedUsername = (user: AppUser) => {
   if (user.username) {
     return `@${user.username}`;
   }
