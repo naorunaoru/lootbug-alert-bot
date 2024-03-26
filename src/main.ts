@@ -12,6 +12,8 @@ dotenv.config();
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const mongoUri = process.env.MONGODB_URI;
 
+const MAX_USERS_PER_MESSAGE = 5;
+
 if (!token) {
   console.error(
     "Telegram bot token is not provided. Please set TELEGRAM_BOT_TOKEN in your environment variables."
@@ -43,113 +45,138 @@ mongoose
     process.exit(1);
   });
 
-bot.onText(/\/register/, async (msg) => {
-  const chatId = msg.chat.id.toString();
-  const userId = msg.from?.id;
-  const name = msg.from?.username;
-  const { first_name: firstName, last_name: lastName } = msg.from || {};
+bot.getMe().then((botInfo) => {
+  let botUsername = "";
 
-  if (!userId) return;
-
-  let user = await User.findOne({ telegramId: userId });
-
-  if (!user) {
-    user = new User({ telegramId: userId, channels: [] });
+  if (botInfo.username) {
+    botUsername = `@${botInfo.username}`;
   }
 
-  user.username = name || user.username;
-  user.firstName = firstName || user.firstName;
-  user.lastName = lastName || user.lastName;
+  bot.onText(/\/register/, async (msg) => {
+    const chatId = msg.chat.id.toString();
+    const userId = msg.from?.id;
+    const name = msg.from?.username;
+    const { first_name: firstName, last_name: lastName } = msg.from || {};
 
-  await user.save();
+    if (!userId) return;
 
-  let channel = await Channel.findOne({ channelId: chatId });
-  if (!channel) {
-    channel = new Channel({ channelId: chatId, users: [] });
-    await channel.save();
-  }
+    let user = await User.findOne({ telegramId: userId });
 
-  const isUserInChannel = channel.users.some((u) => u._id.equals(user?._id));
+    if (!user) {
+      user = new User({ telegramId: userId, channels: [] });
+    }
 
-  if (!isUserInChannel) {
-    channel.users.push(user);
-    await channel.save();
-  }
+    user.username = name || user.username;
+    user.firstName = firstName || user.firstName;
+    user.lastName = lastName || user.lastName;
 
-  const isChannelInUser = user.channels.some((c) => c.equals(channel?._id));
-
-  if (!isChannelInUser) {
-    user.channels.push(channel._id);
     await user.save();
-  }
 
-  bot.sendMessage(
-    chatId,
-    `${getFormattedUsername(user)}, you're on a list now.`,
-    {
-      parse_mode: "HTML",
+    let channel = await Channel.findOne({ channelId: chatId });
+    if (!channel) {
+      channel = new Channel({ channelId: chatId, users: [] });
+      await channel.save();
+    }
+
+    const isUserInChannel = channel.users.some((u) => u._id.equals(user?._id));
+
+    if (!isUserInChannel) {
+      channel.users.push(user);
+      await channel.save();
+    }
+
+    const isChannelInUser = user.channels.some((c) => c.equals(channel?._id));
+
+    if (!isChannelInUser) {
+      user.channels.push(channel._id);
+      await user.save();
+    }
+
+    bot.sendMessage(
+      chatId,
+      `${getFormattedUsername(user)}, you're on a list now.`,
+      {
+        parse_mode: "HTML",
+      }
+    );
+  });
+
+  bot.onText(/\/unregister/, async (msg) => {
+    const chatId = msg.chat.id.toString();
+    const userId = msg.from?.id;
+    if (!userId) return;
+
+    const user = await User.findOne({ telegramId: userId });
+    const channel = await Channel.findOne({ channelId: chatId });
+
+    if (user && channel) {
+      user.channels = user.channels.filter(
+        (ch) => ch.toString() !== channel._id.toString()
+      );
+      await user.save();
+
+      channel.users = channel.users.filter(
+        (usr) => usr.toString() !== user._id.toString()
+      );
+      await channel.save();
+
+      bot.sendMessage(
+        chatId,
+        `${getFormattedUsernameFromMessage(
+          msg
+        )}, you are now of DELET from premises.`,
+        {
+          parse_mode: "HTML",
+        }
+      );
+    } else {
+      bot.sendMessage(
+        chatId,
+        `${getFormattedUsernameFromMessage(msg)}, you're not on a list.`,
+        {
+          parse_mode: "HTML",
+        }
+      );
+    }
+  });
+
+  bot.onText(
+    new RegExp(`/alert(?:${botUsername})?( .+)?`),
+    async (msg, match) => {
+      const chatId = msg.chat.id.toString();
+      const message = match?.[1] || "";
+
+      const channel = await Channel.findOne({ channelId: chatId }).populate(
+        "users"
+      );
+
+      if (!channel || channel.users.length === 0) {
+        bot.sendMessage(
+          chatId,
+          "There are no registered users in this channel. Use /register to get on the list."
+        );
+        return;
+      }
+
+      if (message) {
+        await bot.sendMessage(chatId, message);
+      }
+
+      let index = 0;
+
+      while (index < channel.users.length) {
+        const usersBatch = channel.users.slice(
+          index,
+          index + MAX_USERS_PER_MESSAGE
+        );
+        const userMentions = usersBatch.map(getFormattedUsername).join(" ");
+
+        await bot.sendMessage(chatId, `${userMentions}`, {
+          parse_mode: "HTML",
+        });
+
+        index += MAX_USERS_PER_MESSAGE;
+      }
     }
   );
-});
-
-bot.onText(/\/unregister/, async (msg) => {
-  const chatId = msg.chat.id.toString();
-  const userId = msg.from?.id;
-  if (!userId) return;
-
-  const user = await User.findOne({ telegramId: userId });
-  const channel = await Channel.findOne({ channelId: chatId });
-
-  if (user && channel) {
-    user.channels = user.channels.filter(
-      (ch) => ch.toString() !== channel._id.toString()
-    );
-    await user.save();
-
-    channel.users = channel.users.filter(
-      (usr) => usr.toString() !== user._id.toString()
-    );
-    await channel.save();
-
-    bot.sendMessage(
-      chatId,
-      `${getFormattedUsernameFromMessage(
-        msg
-      )}, you are now of DELET from premises.`,
-      {
-        parse_mode: "HTML",
-      }
-    );
-  } else {
-    bot.sendMessage(
-      chatId,
-      `${getFormattedUsernameFromMessage(msg)}, you're not on a list.`,
-      {
-        parse_mode: "HTML",
-      }
-    );
-  }
-});
-
-bot.onText(/\/alert( .+)?/, async (msg, match) => {
-  const chatId = msg.chat.id.toString();
-  const message = match?.[1] || "";
-
-  const channel = await Channel.findOne({ channelId: chatId }).populate(
-    "users"
-  );
-
-  if (!channel || channel.users.length === 0) {
-    bot.sendMessage(
-      chatId,
-      "There are no registered users in this channel. Use /register to get on the list."
-    );
-    return;
-  }
-
-  const userMentions = channel.users.map(getFormattedUsername).join(" ");
-
-  bot.sendMessage(chatId, `${userMentions} ${message.trim()}`, {
-    parse_mode: "HTML",
-  });
 });
