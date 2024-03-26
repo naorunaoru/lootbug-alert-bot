@@ -1,7 +1,7 @@
 import TelegramBot from "node-telegram-bot-api";
-import mongoose from "mongoose";
+import mongoose, { HydratedDocument } from "mongoose";
 import dotenv from "dotenv";
-import { Channel, User } from "./models";
+import { Channel, IChannel, IUser, User } from "./models";
 import {
   getFormattedUsername,
   getFormattedUsernameFromMessage,
@@ -44,6 +44,23 @@ mongoose
     console.error("Error connecting to MongoDB:", error);
     process.exit(1);
   });
+
+async function removeFromDatabase(
+  user: HydratedDocument<IUser>,
+  channel: HydratedDocument<IChannel>
+) {
+  if (user && channel) {
+    user.channels = user.channels.filter(
+      (ch) => ch.toString() !== channel._id.toString()
+    );
+    await user.save();
+
+    channel.users = channel.users.filter(
+      (usr) => usr.toString() !== user._id.toString()
+    );
+    await channel.save();
+  }
+}
 
 bot.getMe().then((botInfo) => {
   let botUsername = "";
@@ -110,15 +127,7 @@ bot.getMe().then((botInfo) => {
     const channel = await Channel.findOne({ channelId: chatId });
 
     if (user && channel) {
-      user.channels = user.channels.filter(
-        (ch) => ch.toString() !== channel._id.toString()
-      );
-      await user.save();
-
-      channel.users = channel.users.filter(
-        (usr) => usr.toString() !== user._id.toString()
-      );
-      await channel.save();
+      await removeFromDatabase(user, channel);
 
       bot.sendMessage(
         chatId,
@@ -179,4 +188,38 @@ bot.getMe().then((botInfo) => {
       }
     }
   );
+
+  bot.on("message", async (msg) => {
+    if (msg.left_chat_member) {
+      const userId = msg.left_chat_member.id;
+      const chatId = msg.chat.id;
+
+      const user = await User.findOne({ telegramId: userId });
+      const channel = await Channel.findOne({ channelId: chatId });
+
+      if (!user || !channel) {
+        return;
+      }
+
+      const isUserInChannel = channel.users.some((u) =>
+        u._id.equals(user?._id)
+      );
+
+      if (isUserInChannel) {
+        await removeFromDatabase(user, channel);
+
+        await bot.sendMessage(
+          chatId,
+          `${getFormattedUsername(
+            user
+          )} have left the library. ${getFormattedUsername(
+            user
+          )} has been saved.`,
+          {
+            parse_mode: "HTML",
+          }
+        );
+      }
+    }
+  });
 });
